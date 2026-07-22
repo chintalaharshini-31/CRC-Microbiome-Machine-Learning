@@ -1,0 +1,468 @@
+
+---
+title: "Multinomial Logistic Regression for Healthy, Adenoma, and Colorectal Cancer Classification Using the Zeller Microbiome Dataset"
+author: "Harshini Chintala"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    theme: cosmo
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+```
+
+
+# Introduction
+
+Colorectal cancer (CRC) is among the leading causes of cancer-related mortality worldwide. Alterations in the gut microbiome have been associated with the progression from a healthy intestinal environment to precancerous adenoma and eventually colorectal cancer. Identifying these microbial patterns using machine learning can aid in disease classification and biomarker discovery.
+
+Unlike binary classification, multinomial logistic regression enables simultaneous classification of multiple disease states. In this study, a multinomial logistic regression model is developed using the Zeller gut microbiome dataset to classify samples into three groups: Healthy, Adenoma, and Colorectal Cancer (CRC). This model serves as a multiclass baseline for comparison with other machine learning algorithms in subsequent analyses.
+
+
+
+# Objectives
+
+- Load the Zeller microbiome dataset.
+- Preprocess microbial abundance data.
+- Construct a multiclass dataset containing Healthy, Adenoma, and CRC samples.
+- Train a multinomial logistic regression model.
+- Evaluate model performance using multiclass classification metrics.
+- Establish a baseline multiclass model for future comparison with other machine learning algorithms.
+
+
+# Workflow
+
+1. Load required libraries
+2. Import the microbiome dataset
+3. Preprocess the abundance data
+4. Prepare multiclass labels
+5. Split the dataset into training and testing sets
+6. Train the multinomial logistic regression model
+7. Generate predictions
+8. Evaluate model performance
+9. Interpret the results
+
+
+```{r message=FALSE}
+# Load Required Libraries
+
+library(curatedMetagenomicData)
+library(TreeSummarizedExperiment)
+library(dplyr)
+library(caret)
+library(nnet)
+library(ggplot2)
+```
+
+
+The required R packages were loaded to facilitate data acquisition, preprocessing, model development, and evaluation. The curatedMetagenomicData package was used to access the Zeller gut microbiome dataset, while TreeSummarizedExperiment handled the microbiome data structure. The dplyr package supported data manipulation, caret was used for data partitioning and performance evaluation, and nnet provided the implementation of multinomial logistic regression.
+
+
+# Load the Dataset
+
+
+```{r load-data}
+# Load the Zeller microbiome dataset
+
+zeller <- curatedMetagenomicData(
+  "ZellerG_2014.relative_abundance",
+  dryrun = FALSE
+)[[1]]
+
+# Display basic information about the dataset
+
+zeller
+```
+
+
+The Zeller et al. gut microbiome dataset was loaded using the curatedMetagenomicData package. The dataset is stored as a TreeSummarizedExperiment object containing microbial relative abundance profiles together with associated clinical metadata for each sample. This integrated structure facilitates efficient preprocessing and downstream machine learning analyses.
+
+
+# Extract Microbial Abundance Data
+
+```{r extract-abundance}
+# Extract the relative abundance matrix
+abundance <- assay(zeller)
+
+# Display the dimensions of the abundance matrix
+dim(abundance)
+
+# Preview the first few rows and columns
+head(abundance[, 1:5])
+```
+
+
+The microbial relative abundance matrix was extracted from the TreeSummarizedExperiment object using the assay() function. The resulting matrix contained microbial taxa as rows and patient samples as columns, providing the quantitative feature data required for machine learning analyses.
+
+
+# Prepare the Predictor Matrix and Response Variable
+
+
+```{r prepare-data}
+# Extract disease labels
+y <- colData(zeller)$disease
+
+# Convert abundance matrix into predictor matrix
+X <- t(abundance)
+
+# Check dimensions
+dim(X)
+
+# Convert disease labels into a factor
+y <- factor(y)
+
+# Display the class distribution
+table(y)
+```
+
+
+The microbial abundance matrix was transposed so that each row represented a patient sample and each column represented a microbial feature. Disease labels were extracted from the sample metadata and converted into a categorical response variable. All three disease categories (Healthy, Adenoma, and CRC) were retained for multiclass classification.
+
+
+# Train-Test Split
+
+```{r train-test-split}
+# Set a seed for reproducibility
+set.seed(1910)
+
+# Create training indices (80% training, 20% testing)
+train_index <- createDataPartition(y, p = 0.80, list = FALSE)
+
+# Split predictor matrix
+X_train <- X[train_index, ]
+X_test <- X[-train_index, ]
+
+# Split response variable
+y_train <- y[train_index]
+y_test <- y[-train_index]
+
+# Check dimensions
+dim(X_train)
+dim(X_test)
+
+# Check class distribution
+table(y_train)
+table(y_test)
+```
+
+
+# Train the Multinomial Logistic Regression Model
+
+
+```{r train-model}
+multinom_model <- multinom(
+  y_train ~ .,
+  data = data.frame(X_train, y_train),
+  MaxNWts = 10000
+)
+```
+
+A multinomial logistic regression model was trained using the microbial abundance profiles as predictor variables and disease status (Healthy, Adenoma, and CRC) as the response variable. The model simultaneously estimated the relationships between microbial features and the three disease categories, establishing a multiclass baseline classifier.
+
+# Make Predictions
+
+```{r make-predictions}
+# Predict disease classes for the test dataset
+predictions <- predict(
+  multinom_model,
+  newdata = data.frame(X_test)
+)
+
+# Display the first few predictions
+head(predictions)
+```
+
+
+# Model Evaluation
+
+```{r evaluate-model}
+# Generate the confusion matrix
+conf_matrix <- confusionMatrix(predictions, y_test)
+
+# Display the results
+conf_matrix
+```
+
+
+The multinomial logistic regression model achieved an overall accuracy of 46.67% on the testing dataset. The highest classification performance was observed for the Healthy class, with a sensitivity of 58.33% and a balanced accuracy of 65.28%. In comparison, the model demonstrated lower sensitivity for Adenoma (37.50%) and CRC (40.00%), indicating difficulty in distinguishing diseased classes based solely on microbial abundance profiles. These results establish a baseline multiclass classifier for comparison with more advanced machine learning algorithms.
+
+
+# Calculate Additional Performance Metrics (F1-Score)
+
+
+```{r f1-score}
+# Extract precision
+precision <- conf_matrix$byClass[, "Pos Pred Value"]
+
+# Extract recall (sensitivity)
+recall <- conf_matrix$byClass[, "Sensitivity"]
+
+# Calculate F1-score
+f1_score <- 2 * ((precision * recall) / (precision + recall))
+
+# Combine metrics into a table
+performance_metrics <- data.frame(
+  Class = rownames(conf_matrix$byClass),
+  Precision = round(precision, 3),
+  Recall = round(recall, 3),
+  F1_Score = round(f1_score, 3)
+)
+
+performance_metrics
+```
+
+
+The F1-score was calculated for each disease class to provide a balanced measure of precision and recall. The Healthy class achieved the highest F1-score, whereas Adenoma and CRC showed comparatively lower values, indicating reduced classification performance for diseased samples.
+
+
+# Confusion Matrix Heatmap
+
+```{r confusion-matrix-heatmap}
+# Convert confusion matrix to a data frame
+cm_df <- as.data.frame(conf_matrix$table)
+
+# Plot confusion matrix heatmap
+ggplot(cm_df, aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), size = 5) +
+  scale_fill_gradient(low = "white", high = "steelblue") +
+  labs(
+    title = "Confusion Matrix",
+    x = "Actual Class",
+    y = "Predicted Class",
+    fill = "Count"
+  ) +
+  theme_minimal()
+```
+
+
+# Performance Metrics Table
+
+```{r performance-table}
+# Extract overall accuracy
+accuracy <- conf_matrix$overall["Accuracy"]
+
+# Extract class-wise metrics
+metrics <- data.frame(
+  Class = rownames(conf_matrix$byClass),
+  Precision = round(conf_matrix$byClass[, "Pos Pred Value"], 3),
+  Recall = round(conf_matrix$byClass[, "Sensitivity"], 3),
+  Specificity = round(conf_matrix$byClass[, "Specificity"], 3),
+  Balanced_Accuracy = round(conf_matrix$byClass[, "Balanced Accuracy"], 3)
+)
+
+# Display accuracy
+accuracy
+
+# Display performance metrics
+metrics
+```
+
+
+# Conclusion
+
+A multinomial logistic regression model was developed to classify Healthy, Adenoma, and CRC samples using microbial relative abundance data from the Zeller et al. dataset.
+
+The model achieved an overall accuracy of 46.67%. Among the three classes, the Healthy class showed the highest classification performance, while Adenoma and CRC were more difficult to distinguish. This notebook establishes a baseline multiclass classification model that can be compared with more advanced machine learning algorithms in future analyses.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

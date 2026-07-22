@@ -1,0 +1,306 @@
+
+---
+title: "Binary Logistic Regression for Healthy and Colorectal Cancer Classification Using the Zeller Microbiome Dataset"
+author: "Harshini Chintala"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    theme: cosmo
+---
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+```
+
+
+# Introduction
+
+Colorectal cancer (CRC) is one of the leading causes of cancer-related mortality worldwide. Recent studies have shown that alterations in the gut microbiome are associated with the development and progression of CRC, making microbial profiles a promising source of non-invasive biomarkers for disease detection.
+
+This notebook demonstrates the development of a binary logistic regression model to classify Healthy and Colorectal Cancer (CRC) samples using microbial relative abundance data from the Zeller et al. gut microbiome dataset. Logistic regression is a widely used statistical classification algorithm that estimates the probability of class membership based on the relationship between microbial features and disease status.
+
+The resulting model serves as a baseline binary classification approach and provides a foundation for comparison with more advanced machine learning algorithms in later analyses.
+
+# Objectives
+
+The objectives of this notebook are to:
+
+- Load the Zeller et al. gut microbiome dataset from the curatedMetagenomicData package.
+- Extract microbial relative abundance profiles for each sample.
+- Filter the dataset to include only Healthy and Colorectal Cancer (CRC) samples.
+- Prepare the predictor matrix and response variable for binary classification.
+- Split the data into training and testing sets.
+- Train a binary logistic regression model.
+- Evaluate model performance using a confusion matrix and standard classification metrics.
+
+# Workflow
+
+1. Load the required libraries.
+2. Load the Zeller microbiome dataset.
+3. Extract the microbial abundance table.
+4. Prepare the predictor matrix and response variable.
+5. Filter the dataset for binary classification.
+6. Split the data into training and testing sets.
+7. Train the binary logistic regression model.
+8. Generate predictions on the test dataset.
+9. Evaluate model performance.
+
+
+# Load Required Libraries
+
+```{r}
+library(curatedMetagenomicData)
+library(TreeSummarizedExperiment)
+library(dplyr)
+library(caret)
+```
+
+# Load the Dataset
+
+```{r load-data}
+# Load the Zeller microbiome dataset
+zeller <- curatedMetagenomicData(
+  "ZellerG_2014.relative_abundance",
+  dryrun = FALSE
+)[[1]]
+```
+
+The Zeller et al. gut microbiome dataset is loaded from the curatedMetagenomicData package. This dataset contains microbial relative abundance profiles from healthy individuals, patients with adenoma, and patients with colorectal cancer (CRC). The data are stored as a TreeSummarizedExperiment object, which includes microbial abundance measurements along with associated sample metadata.
+
+# Extract the Microbial Abundance Table
+
+```{r}
+# Extract microbial abundance table
+abundance <- assay(zeller)
+```
+
+The microbial abundance table is extracted from the TreeSummarizedExperiment object. In this table, each row represents a microbial species, while each column represents an individual sample. The abundance values correspond to the relative abundance of each microbial species within a sample.
+
+# Prepare the Predictor Matrix and Response Variable
+
+```{r}
+# Extract disease labels
+y <- colData(zeller)$disease
+
+# Transpose abundance matrix so rows represent samples
+X <- t(abundance)
+
+# Convert disease labels to factor
+y <- factor(y)
+```
+
+The microbial abundance table is transposed so that each row represents an individual sample and each column represents a microbial feature. The disease labels are extracted from the sample metadata and converted to a factor for classification.
+
+# Filter for Binary Classification
+
+```{r}
+# Keep only Healthy and CRC samples
+binary_index <- y %in% c("healthy", "CRC")
+
+# Filter predictor matrix
+X <- X[binary_index, ]
+
+# Filter response variable
+y <- y[binary_index]
+
+# Remove unused factor level (Adenoma)
+y <- droplevels(y)
+
+# Display class distribution
+table(y)
+```                                                    
+
+The original dataset contains three disease categories: Healthy, Adenoma, and Colorectal Cancer (CRC). Since this notebook focuses on binary logistic regression, only Healthy and CRC samples are retained, while Adenoma samples are excluded.
+
+
+# Train-Test Split
+
+```{r}
+# Set seed for reproducibility
+set.seed(1910)
+
+# Create indices for the training set (80%)
+train_index <- createDataPartition(
+  y,
+  p = 0.80,
+  list = FALSE
+)
+
+# Split predictor matrix
+X_train <- X[train_index, ]
+X_test  <- X[-train_index, ]
+
+# Split response variable
+y_train <- y[train_index]
+y_test  <- y[-train_index]
+
+# Display dimensions of the training and testing datasets
+dim(X_train)
+dim(X_test)
+```
+
+The filtered dataset is divided into training and testing sets using an 80:20 ratio. The training set is used to build the binary logistic regression model, while the testing set is reserved for evaluating the model's performance on unseen samples. A random seed is set to ensure that the data split is reproducible.
+
+
+# Train Binary Logistic Regression Model
+
+A binary logistic regression model is trained using the training dataset. Logistic regression estimates the probability that a sample belongs to one of the two disease classes based on the microbial relative abundance features.
+
+
+
+```{r}
+# Train the binary logistic regression model
+logistic_model <- glm(
+  y_train ~ .,
+  data = data.frame(X_train, y_train),
+  family = binomial
+)
+
+# Display model summary
+# summary(logistic_model)
+```
+
+The binary logistic regression model was successfully trained using the training dataset. The complete model summary is omitted from this report because the model contains a large number of microbial predictors, making the output difficult to interpret in a report format.
+
+
+
+
+# Generate Predictions
+
+```{r}
+# Predict probabilities for the testing dataset
+predicted_probabilities <- predict(
+  logistic_model,
+  newdata = data.frame(X_test),
+  type = "response"
+)
+
+# Convert probabilities to predicted class labels
+predicted_class <- ifelse(
+  predicted_probabilities > 0.5,
+  "CRC",
+  "healthy"
+)
+
+# Convert predictions to a factor
+predicted_class <- factor(
+  predicted_class,
+  levels = levels(y_test)
+)
+```
+
+The trained logistic regression model is used to predict the probability that each testing sample belongs to the CRC class. These probabilities are then converted into class labels using a decision threshold of 0.5.
+
+# Evaluate Model Performance
+
+```{r}
+# Generate confusion matrix
+conf_matrix <- confusionMatrix(
+  predicted_class,
+  y_test
+)
+
+# Display confusion matrix
+conf_matrix
+```
+
+The confusion matrix shows that the binary logistic regression model achieved an accuracy of 50.0%. While the model correctly identified some CRC cases (Sensitivity = 60.0%), its overall classification performance was limited, indicating that binary logistic regression alone may not be sufficient for accurate classification of the high-dimensional microbiome dataset.
+
+# Visualize the Confusion Matrix
+
+
+```{r}
+# Convert confusion matrix to a data frame
+cm_df <- as.data.frame(conf_matrix$table)
+
+# Load ggplot2
+library(ggplot2)
+
+# Plot confusion matrix
+ggplot(cm_df, aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), size = 6) +
+  scale_fill_gradient(low = "white", high = "steelblue") +
+  labs(
+    title = "Confusion Matrix",
+    x = "Actual Class",
+    y = "Predicted Class",
+    fill = "Count"
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+To improve interpretability, the confusion matrix is visualized as a heatmap. Darker cells represent a higher number of samples, allowing correct classifications and misclassifications to be identified more easily.
+
+
+# Performance Metrics
+
+To further evaluate the binary logistic regression model, additional performance metrics are calculated from the confusion matrix. These metrics provide a more detailed assessment of the model's classification performance.
+
+```{r}
+# Extract overall accuracy
+accuracy <- conf_matrix$overall["Accuracy"]
+
+# Extract performance metrics
+metrics <- data.frame(
+  Metric = c(
+    "Precision",
+    "Recall (Sensitivity)",
+    "Specificity",
+    "Balanced Accuracy"
+  ),
+  Value = round(
+    c(
+      conf_matrix$byClass["Pos Pred Value"],
+      conf_matrix$byClass["Sensitivity"],
+      conf_matrix$byClass["Specificity"],
+      conf_matrix$byClass["Balanced Accuracy"]
+    ),
+    3
+  )
+)
+
+# Display accuracy
+accuracy
+
+# Display performance metrics
+metrics
+```
+
+
+# Conclusion
+
+A binary logistic regression model was developed to classify Healthy and Colorectal Cancer (CRC) samples using microbial relative abundance data from the Zeller et al. gut microbiome dataset. The workflow included data loading, preprocessing, binary class filtering, train-test splitting, model training, prediction, and performance evaluation.
+
+The model achieved an accuracy of **50.0%**, demonstrating moderate sensitivity but limited overall classification performance. These results establish a baseline for CRC classification using logistic regression and provide a reference for evaluating more advanced machine learning models and feature selection techniques in future analyses.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
